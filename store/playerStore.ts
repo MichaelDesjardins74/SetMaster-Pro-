@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { Audio } from 'expo-av';
 import { Platform } from 'react-native';
-import * as FileSystem from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system';
 import { PlaybackState } from '@/types';
 import { useSongStore } from './songStore';
 import { useSetlistStore } from './setlistStore';
@@ -388,7 +388,18 @@ export const usePlayerStore = create<PlayerState>()((set, get) => ({
     const nextSong = useSongStore.getState().songs[setlist.songs[nextIndex]];
     if (nextSong && nextSong.audioUri) {
       console.log('Loading audio for next song:', nextSong.title);
-      get().loadAndPlayAudio(nextSong.audioUri, get().playbackState.isPlaying);
+      try {
+        await get().loadAndPlayAudio(nextSong.audioUri, get().playbackState.isPlaying);
+      } catch (error) {
+        console.error('Error loading audio for next song:', error);
+        // Set duration even if audio fails to load
+        set(state => ({
+          playbackState: {
+            ...state.playbackState,
+            duration: nextSong ? nextSong.duration : 0
+          }
+        }));
+      }
     } else {
       console.log('No audio URI for next song:', nextSong?.title);
       // If no audio, set a default duration
@@ -431,7 +442,18 @@ export const usePlayerStore = create<PlayerState>()((set, get) => ({
     const prevSong = useSongStore.getState().songs[setlist.songs[prevIndex]];
     if (prevSong && prevSong.audioUri) {
       console.log('Loading audio for previous song:', prevSong.title);
-      get().loadAndPlayAudio(prevSong.audioUri, get().playbackState.isPlaying);
+      try {
+        await get().loadAndPlayAudio(prevSong.audioUri, get().playbackState.isPlaying);
+      } catch (error) {
+        console.error('Error loading audio for previous song:', error);
+        // Set duration even if audio fails to load
+        set(state => ({
+          playbackState: {
+            ...state.playbackState,
+            duration: prevSong ? prevSong.duration : 0
+          }
+        }));
+      }
     } else {
       console.log('No audio URI for previous song:', prevSong?.title);
       // If no audio, set a default duration
