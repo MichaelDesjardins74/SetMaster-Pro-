@@ -5,13 +5,12 @@
     "version": "1.0.8",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
+    "scheme": "setmaster-pro",
     "userInterfaceStyle": "automatic",
     "experiments": {
       "typedRoutes": true,
       "tsconfigPaths": true
     },
-    "jsEngine": "hermes",
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
@@ -20,13 +19,17 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.rork.setmaster-pro",
+      "jsEngine": "hermes",
       "infoPlist": {
         "UIBackgroundModes": [
+          "audio",
           "audio"
         ],
-        "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to access your microphone"
+        "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to access your microphone",
+        "ITSAppUsesNonExemptEncryption": false
       },
-      "usesIcloudStorage": true
+      "usesIcloudStorage": true,
+      "usesAppleSignIn": true
     },
     "android": {
       "adaptiveIcon": {
@@ -34,11 +37,14 @@
         "backgroundColor": "#ffffff"
       },
       "package": "app.rork.setmaster-pro",
+      "jsEngine": "hermes",
       "permissions": [
         "RECORD_AUDIO",
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
-        "INTERNET"
+        "INTERNET",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ]
     },
     "web": {
@@ -62,7 +68,18 @@
         {
           "iCloudContainerEnvironment": "Production"
         }
-      ]
-    ]
+      ],
+      "expo-apple-authentication"
+    ],
+    "extra": {
+      "router": {
+        "origin": "https://rork.app/"
+      },
+      "eas": {
+        "projectId": "f7f653aa-6cf9-4769-9304-7b326925e9e5"
+      },
+      "EXPO_PUBLIC_SUPABASE_URL": "https://zbcdnczujnsvudcsiihd.supabase.co",
+      "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpiY2RuY3p1am5zdnVkY3NpaWhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2MDM1MDMsImV4cCI6MjA4MDE3OTUwM30.8EYl4hF_G5zaejMym8lnJUiq3E7NTPpBXdCdk46DZy4"
+    }
   }
 }
