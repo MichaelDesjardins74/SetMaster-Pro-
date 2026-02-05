@@ -1,14 +1,159 @@
-import React from 'react';
-import { View, Text, StyleSheet, Switch, Pressable, ScrollView } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, Switch, Pressable, ScrollView, Alert, TouchableOpacity, ActivityIndicator, Image } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Moon, Sun, Info, Clock, Smartphone } from 'lucide-react-native';
+import { Moon, Sun, Info, Clock, Smartphone, LogOut, User, Camera } from 'lucide-react-native';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useTheme } from '@/context/ThemeContext';
+import { useAuthStore } from '@/store/authStore';
+import * as ImagePicker from 'expo-image-picker';
+import { supabase } from '@/lib/supabase';
+import * as FileSystem from 'expo-file-system/legacy';
+
+// Helper function to decode base64 to ArrayBuffer for upload
+const decode = (base64: string): ArrayBuffer => {
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes.buffer;
+};
 
 export default function SettingsScreen() {
   const router = useRouter();
   const { settings, updateSettings } = useSettingsStore();
   const { colors, isDark, toggleTheme } = useTheme();
+  const { user, logout, updateProfile } = useAuthStore();
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+
+  const uploadProfilePicture = async (uri: string) => {
+    try {
+      if (!user) {
+        console.error('❌ No user found, cannot upload');
+        return null;
+      }
+
+      console.log('📸 Starting profile picture upload for user:', user.id);
+
+      // Generate unique file name - use folder structure for RLS policies
+      const fileExt = uri.split('.').pop()?.toLowerCase() || 'jpg';
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `${user.id}/${fileName}`;
+
+      console.log('📁 Upload path:', filePath);
+
+      // Read file as base64
+      console.log('📖 Reading file from:', uri);
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      console.log('✓ File read successfully, size:', base64.length, 'chars');
+
+      // Convert base64 to blob
+      const contentType = `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`;
+      console.log('☁️  Uploading to Supabase Storage (avatars bucket)...');
+      console.log('   Content-Type:', contentType);
+
+      const { data, error } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, decode(base64), {
+          contentType,
+          upsert: true,
+        });
+
+      if (error) {
+        console.error('❌ Upload error:', error);
+        console.error('   Error message:', error.message);
+        console.error('   Error details:', JSON.stringify(error, null, 2));
+        throw error;
+      }
+
+      console.log('✓ Upload successful!', data);
+
+      // Get public URL
+      console.log('🔗 Getting public URL...');
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      console.log('✓ Public URL:', publicUrl);
+
+      return publicUrl;
+    } catch (error) {
+      console.error('❌ Critical error in uploadProfilePicture:', error);
+      if (error instanceof Error) {
+        console.error('   Message:', error.message);
+        console.error('   Stack:', error.stack);
+      }
+      throw error;
+    }
+  };
+
+  const handleProfilePictureUpdate = async () => {
+    try {
+      // Request permissions
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Please allow access to your photo library to update your profile picture.');
+        return;
+      }
+
+      // Pick image
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+
+      if (result.canceled) {
+        return;
+      }
+
+      setIsUploadingImage(true);
+
+      // Upload image
+      const imageUrl = await uploadProfilePicture(result.assets[0].uri);
+
+      if (imageUrl) {
+        // Update profile in database
+        const success = await updateProfile({ avatar_url: imageUrl });
+
+        if (success) {
+          Alert.alert('Success', 'Profile picture updated successfully!');
+        } else {
+          Alert.alert('Error', 'Failed to update profile picture. Please try again.');
+        }
+      }
+    } catch (error) {
+      console.error('Error updating profile picture:', error);
+      Alert.alert('Error', 'Failed to update profile picture. Please try again.');
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            await logout();
+            router.replace('/auth/login');
+          },
+        },
+      ]
+    );
+  };
 
   const toggleAutoScroll = () => {
     updateSettings({ autoScroll: !settings.autoScroll });
@@ -20,6 +165,62 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* User Profile Section */}
+      {user && (
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Account</Text>
+
+          <View style={[styles.profileCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={styles.profileInfo}>
+              <View style={styles.profilePictureContainer}>
+                {user.profilePicture ? (
+                  <Image
+                    source={{ uri: user.profilePicture }}
+                    style={styles.profilePicture}
+                  />
+                ) : (
+                  <View style={[styles.profileIconContainer, { backgroundColor: colors.primary }]}>
+                    <User size={32} color="#FFFFFF" />
+                  </View>
+                )}
+                <TouchableOpacity
+                  style={[styles.cameraButton, { backgroundColor: colors.primary }]}
+                  onPress={handleProfilePictureUpdate}
+                  disabled={isUploadingImage}
+                >
+                  {isUploadingImage ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Camera size={16} color="#FFFFFF" />
+                  )}
+                </TouchableOpacity>
+              </View>
+              <View style={styles.profileDetails}>
+                {user.name && (
+                  <Text style={[styles.profileName, { color: colors.text }]}>{user.name}</Text>
+                )}
+                {user.email && (
+                  <Text style={[styles.profileEmail, { color: colors.textSecondary }]}>{user.email}</Text>
+                )}
+                <View style={styles.providerBadge}>
+                  <Text style={[styles.providerText, { color: colors.textSecondary }]}>
+                    Signed in with {user.authProvider === 'email' ? 'Email' : 'Apple'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.logoutButton, { backgroundColor: colors.error }]}
+              onPress={handleLogout}
+            >
+              <LogOut size={20} color="#FFFFFF" />
+              <Text style={styles.logoutButtonText}>Logout</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Appearance</Text>
         
@@ -178,6 +379,76 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 16,
+  },
+  profileCard: {
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+  },
+  profileInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  profilePictureContainer: {
+    position: 'relative',
+    marginRight: 16,
+  },
+  profileIconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profilePicture: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+  },
+  cameraButton: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  profileDetails: {
+    flex: 1,
+  },
+  profileName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  profileEmail: {
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  providerBadge: {
+    alignSelf: 'flex-start',
+  },
+  providerText: {
+    fontSize: 12,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+  },
+  logoutButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   settingItem: {
     flexDirection: 'row',

@@ -282,65 +282,27 @@ export default function PracticeModeScreen() {
   };
   
   const handleNextSessionSong = async () => {
-    if (isInSession && activeSession) {
-      console.log('Next session song - current index:', sessionSongIndex, 'total:', totalSessionSongs);
-
-      // Check if we can go to next song
-      if (sessionSongIndex >= totalSessionSongs - 1) {
-        console.log('Already at last song in session');
-        return;
-      }
-
-      // Stop playback and unload current audio
-      setPlaybackState({ isPlaying: false });
-      await unloadAudio();
-
-      // Update session state first
+    // Since sessions now use setlist-based navigation, just use the playerStore's nextSong
+    // which properly handles audio unloading and loading
+    if (activeSession) {
+      // Update session state to track progress
       nextSessionSong(activeSession.id);
-
-      // Get the next song ID directly
-      const nextIndex = sessionSongIndex + 1;
-      const nextSongId = activeSession.songIds[nextIndex];
-      console.log('Moving to next song:', nextSongId, 'at index:', nextIndex);
-
-      if (nextSongId) {
-        // Navigate to the next song
-        router.replace(`/practice/${nextSongId}?isSong=true`);
-      }
-    } else {
-      nextSong();
     }
+
+    // Use the playerStore's nextSong which handles everything properly
+    nextSong();
   };
   
   const handlePreviousSessionSong = async () => {
-    if (isInSession && activeSession) {
-      console.log('Previous session song - current index:', sessionSongIndex, 'total:', totalSessionSongs);
-
-      // Check if we can go to previous song
-      if (sessionSongIndex <= 0) {
-        console.log('Already at first song in session');
-        return;
-      }
-
-      // Stop playback and unload current audio
-      setPlaybackState({ isPlaying: false });
-      await unloadAudio();
-
-      // Update session state first
+    // Since sessions now use setlist-based navigation, just use the playerStore's previousSong
+    // which properly handles audio unloading and loading
+    if (activeSession) {
+      // Update session state to track progress
       previousSessionSong(activeSession.id);
-
-      // Get the previous song ID directly
-      const prevIndex = sessionSongIndex - 1;
-      const prevSongId = activeSession.songIds[prevIndex];
-      console.log('Moving to previous song:', prevSongId, 'at index:', prevIndex);
-
-      if (prevSongId) {
-        // Navigate to the previous song
-        router.replace(`/practice/${prevSongId}?isSong=true`);
-      }
-    } else {
-      previousSong();
     }
+
+    // Use the playerStore's previousSong which handles everything properly
+    previousSong();
   };
 
   const handleSetScrollStart = () => {
@@ -499,8 +461,10 @@ export default function PracticeModeScreen() {
         <View style={styles.songDetails}>
           <Text style={[styles.songKey, { color: colors.textSecondary }]}>Key: {currentSong.key}</Text>
           <Text style={[styles.songTempo, { color: colors.textSecondary }]}>{currentSong.tempo} BPM</Text>
-          {hasAudio && (
+          {hasAudio ? (
             <Text style={[styles.audioIndicator, { color: colors.primary }]}>Audio Available</Text>
+          ) : (
+            <Text style={[styles.audioIndicator, { color: colors.error || '#ff6b6b' }]}>No Audio - Add audio file to enable playback</Text>
           )}
           {lyricsStartTime > 0 && (
             <View style={styles.lyricsStartTimeContainer}>
@@ -1248,11 +1212,11 @@ const styles = StyleSheet.create({
   },
   completeSessionButton: {
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 9,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 70,
+    minWidth: 100,
   },
   completeSessionButtonText: {
     color: '#FFFFFF',

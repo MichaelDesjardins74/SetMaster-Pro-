@@ -26,6 +26,7 @@
           "audio"
         ],
         "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to access your microphone",
+        "NSPhotoLibraryUsageDescription": "Allow $(PRODUCT_NAME) to access your photos to set your profile picture",
         "ITSAppUsesNonExemptEncryption": false
       },
       "usesIcloudStorage": true,
@@ -69,7 +70,11 @@
           "iCloudContainerEnvironment": "Production"
         }
       ],
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      "@react-native-community/datetimepicker",
+      "expo-font",
+      "expo-sqlite",
+      "expo-web-browser"
     ],
     "extra": {
       "router": {

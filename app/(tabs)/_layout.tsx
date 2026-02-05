@@ -1,6 +1,6 @@
 import React from "react";
 import { Tabs } from "expo-router";
-import { Home, ListMusic, Music, Settings, Calendar } from "lucide-react-native";
+import { Home, ListMusic, Music, Settings, Calendar, Users } from "lucide-react-native";
 import PlayerControls from "@/components/PlayerControls";
 import { usePlayerStore } from "@/store/playerStore";
 import { useTheme } from "@/context/ThemeContext";
@@ -25,7 +25,7 @@ export default function TabLayout() {
           },
           headerTintColor: colors.text,
           headerTitleStyle: {
-            fontWeight: 'bold',
+            fontWeight: '700' as any,
           },
           tabBarLabelStyle: {
             fontSize: 12,
@@ -58,6 +58,14 @@ export default function TabLayout() {
           options={{
             title: "Rehearsal",
             tabBarIcon: ({ color }) => <Calendar size={24} color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="bands"
+          options={{
+            title: "Bands",
+            headerShown: true,
+            tabBarIcon: ({ color }) => <Users size={24} color={color} />,
           }}
         />
         <Tabs.Screen

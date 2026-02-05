@@ -29,6 +29,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+    // Ensure storage key is consistent
+    storageKey: 'setmaster-supabase-auth',
+    // Flow type for better error handling
+    flowType: 'pkce',
   },
 });
 

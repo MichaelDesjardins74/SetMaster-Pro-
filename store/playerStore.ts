@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { Audio } from 'expo-av';
 import { Platform } from 'react-native';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { PlaybackState } from '@/types';
 import { useSongStore } from './songStore';
 import { useSetlistStore } from './setlistStore';
@@ -473,9 +473,9 @@ export const usePlayerStore = create<PlayerState>()((set, get) => ({
         console.log('Audio playback not supported on web');
         return;
       }
-      
+
       console.log('Loading audio from URI:', uri, 'shouldPlay:', shouldPlay);
-      
+
       // Unload any existing sound
       const { sound: existingSound } = get();
       if (existingSound) {
@@ -485,47 +485,54 @@ export const usePlayerStore = create<PlayerState>()((set, get) => ({
           console.error('Error unloading existing sound:', unloadError);
         }
       }
-      
+
       // Reset seeking state
       set({ isSeekingInProgress: false });
-      
+
       // Get current volume settings
       const { volume, isMuted } = get().playbackState;
-      
-      // Validate audio file exists before loading
-      try {
-        const fileInfo = await FileSystem.getInfoAsync(uri);
-        if (!fileInfo.exists) {
-          console.error('Audio file does not exist:', uri);
-          // Try to clear the invalid audio URI from the song
-          const { currentSongId } = get();
-          if (currentSongId) {
-            const song = useSongStore.getState().songs[currentSongId];
-            if (song) {
-              // Clear the invalid audio URI
-              useSongStore.getState().updateSong(currentSongId, { 
-                ...song, 
-                audioUri: undefined,
-                audioFileName: undefined 
-              });
+
+      // Check if this is a remote URL (shared song from Supabase) or local file
+      const isRemoteUrl = uri.startsWith('http://') || uri.startsWith('https://');
+
+      // Only validate local files - remote URLs will be validated when loaded
+      if (!isRemoteUrl) {
+        try {
+          const fileInfo = await FileSystem.getInfoAsync(uri);
+          if (!fileInfo.exists) {
+            console.error('Audio file does not exist:', uri);
+            // Try to clear the invalid audio URI from the song
+            const { currentSongId } = get();
+            if (currentSongId) {
+              const song = useSongStore.getState().songs[currentSongId];
+              if (song) {
+                // Clear the invalid audio URI
+                useSongStore.getState().updateSong(currentSongId, {
+                  ...song,
+                  audioUri: undefined,
+                  audioFileName: undefined
+                });
+              }
             }
+            throw new Error('Audio file not found. Please re-import the audio file.');
           }
-          throw new Error('Audio file not found. Please re-import the audio file.');
+
+          // Check file size - very small files might be corrupted
+          if (fileInfo.size && fileInfo.size < 1000) {
+            console.error('Audio file too small, might be corrupted:', fileInfo.size, 'bytes');
+            throw new Error('Audio file appears to be corrupted. Please re-import the audio.');
+          }
+        } catch (fileError: any) {
+          console.error('Error checking audio file:', fileError);
+          // If it's our custom error, re-throw it
+          if (fileError.message?.includes('Audio file')) {
+            throw fileError;
+          }
+          // Otherwise, throw a generic error
+          throw new Error('Cannot access audio file. Please re-import the audio.');
         }
-        
-        // Check file size - very small files might be corrupted
-        if (fileInfo.size && fileInfo.size < 1000) {
-          console.error('Audio file too small, might be corrupted:', fileInfo.size, 'bytes');
-          throw new Error('Audio file appears to be corrupted. Please re-import the audio.');
-        }
-      } catch (fileError: any) {
-        console.error('Error checking audio file:', fileError);
-        // If it's our custom error, re-throw it
-        if (fileError.message?.includes('Audio file')) {
-          throw fileError;
-        }
-        // Otherwise, throw a generic error
-        throw new Error('Cannot access audio file. Please re-import the audio.');
+      } else {
+        console.log('Loading remote audio URL (shared song)');
       }
       
       // Create a status update callback that can be cleaned up

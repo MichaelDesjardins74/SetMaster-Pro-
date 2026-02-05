@@ -1,5 +1,5 @@
 import { Share, Platform } from 'react-native';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
 import { Setlist, Song } from '@/types';
 import * as Linking from 'expo-linking';

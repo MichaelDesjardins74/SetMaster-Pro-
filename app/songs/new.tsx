@@ -34,8 +34,10 @@ export default function NewSongScreen() {
       title: title.trim(),
       artist: artist.trim(),
       key: key.trim() || 'C',
-      tempo: parseInt(tempo) || 120,
-      duration: audioDuration || parseInt(duration) || 180,
+      tempo: parseInt(tempo, 10) || 120,
+      duration: audioDuration != null
+  ? Math.round(audioDuration)
+  : (parseInt(duration, 10) || 180),
       lyrics: lyrics.trim(),
       notes: notes.trim(),
       lyricsStartTime: parseFloat(lyricsStartTime) || 0,

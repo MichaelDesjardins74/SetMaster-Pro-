@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSetlistStore } from './setlistStore';
+import { getUserStorageKey } from '@/utils/storageUtils';
 
 export interface RehearsalSession {
   id: string;
@@ -35,6 +36,7 @@ interface RehearsalStore {
   currentPlanId: string | null;
   sessions: RehearsalSession[];
   activeSessionId: string | null;
+  currentUserId: string | null;
   loadPlans: () => Promise<void>;
   savePlans: () => Promise<void>;
   addPlan: (plan: RehearsalPlan) => void;
@@ -59,6 +61,9 @@ interface RehearsalStore {
   getCurrentSessionSong: (sessionId: string) => string | null;
   getSessionSongIndex: (sessionId: string) => number;
   getTotalSessionSongs: (sessionId: string) => number;
+  loadUserData: (userId: string) => Promise<void>;
+  clearData: () => void;
+  saveUserData: () => Promise<void>;
 }
 
 export const useRehearsalStore = create<RehearsalStore>((set, get) => ({
@@ -66,13 +71,24 @@ export const useRehearsalStore = create<RehearsalStore>((set, get) => ({
   currentPlanId: null,
   sessions: [],
   activeSessionId: null,
+  currentUserId: null,
 
   loadPlans: async () => {
+    const { currentUserId } = get();
+    if (!currentUserId) {
+      console.warn('Cannot load rehearsal data: no user ID');
+      return;
+    }
+
     try {
-      const plansData = await AsyncStorage.getItem('rehearsal_plans');
-      const sessionsData = await AsyncStorage.getItem('rehearsal_sessions');
-      const currentPlanData = await AsyncStorage.getItem('current_rehearsal_plan');
-      
+      const plansKey = getUserStorageKey(currentUserId, 'rehearsal-plans');
+      const sessionsKey = getUserStorageKey(currentUserId, 'rehearsal-sessions');
+      const currentPlanKey = getUserStorageKey(currentUserId, 'current-rehearsal-plan');
+
+      const plansData = await AsyncStorage.getItem(plansKey);
+      const sessionsData = await AsyncStorage.getItem(sessionsKey);
+      const currentPlanData = await AsyncStorage.getItem(currentPlanKey);
+
       if (plansData) {
         const plans = JSON.parse(plansData);
         // Convert date strings back to Date objects
@@ -85,7 +101,7 @@ export const useRehearsalStore = create<RehearsalStore>((set, get) => ({
         });
         set({ plans });
       }
-      
+
       if (sessionsData) {
         const sessions = JSON.parse(sessionsData);
         sessions.forEach((session: RehearsalSession) => {
@@ -93,7 +109,7 @@ export const useRehearsalStore = create<RehearsalStore>((set, get) => ({
         });
         set({ sessions });
       }
-      
+
       if (currentPlanData) {
         set({ currentPlanId: currentPlanData });
       }
@@ -103,18 +119,52 @@ export const useRehearsalStore = create<RehearsalStore>((set, get) => ({
   },
 
   savePlans: async () => {
+    const { currentUserId } = get();
+    if (!currentUserId) {
+      console.warn('Cannot save rehearsal data: no user ID');
+      return;
+    }
+
     try {
       const { plans, sessions, currentPlanId } = get();
-      await AsyncStorage.setItem('rehearsal_plans', JSON.stringify(plans));
-      await AsyncStorage.setItem('rehearsal_sessions', JSON.stringify(sessions));
+
+      const plansKey = getUserStorageKey(currentUserId, 'rehearsal-plans');
+      const sessionsKey = getUserStorageKey(currentUserId, 'rehearsal-sessions');
+      const currentPlanKey = getUserStorageKey(currentUserId, 'current-rehearsal-plan');
+
+      await AsyncStorage.setItem(plansKey, JSON.stringify(plans));
+      await AsyncStorage.setItem(sessionsKey, JSON.stringify(sessions));
       if (currentPlanId) {
-        await AsyncStorage.setItem('current_rehearsal_plan', currentPlanId);
+        await AsyncStorage.setItem(currentPlanKey, currentPlanId);
       } else {
-        await AsyncStorage.removeItem('current_rehearsal_plan');
+        await AsyncStorage.removeItem(currentPlanKey);
       }
     } catch (error) {
       console.error('Error saving rehearsal plans:', error);
     }
+  },
+
+  saveUserData: async () => {
+    await get().savePlans();
+  },
+
+  loadUserData: async (userId: string) => {
+    try {
+      set({ currentUserId: userId, plans: [], sessions: [], currentPlanId: null, activeSessionId: null });
+      await get().loadPlans();
+    } catch (error) {
+      console.error('Error loading user rehearsal data:', error);
+    }
+  },
+
+  clearData: () => {
+    set({
+      plans: [],
+      currentPlanId: null,
+      sessions: [],
+      activeSessionId: null,
+      currentUserId: null,
+    });
   },
 
   addPlan: (plan) => {

@@ -15,11 +15,13 @@ import {
 
   Dimensions,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTheme } from '@/context/ThemeContext';
 import { useRehearsalStore, RehearsalSession, RehearsalPlan } from '@/store/rehearsalStore';
 
 import { useSetlistStore } from '@/store/setlistStore';
 import { useSongStore } from '@/store/songStore';
+import { usePlayerStore } from '@/store/playerStore';
 import { generateId } from '@/utils/idUtils';
 import { formatDuration } from '@/utils/timeUtils';
 import { Calendar, Clock, Music, Sparkles, X, CheckCircle, ChevronDown, ChevronUp, Play, Target, Focus, Trash2 } from 'lucide-react-native';
@@ -47,11 +49,13 @@ export default function RehearsalScreen() {
   } = useRehearsalStore();
   const { setlists } = useSetlistStore();
   const { songs } = useSongStore();
+  const { setCurrentSetlist, unloadAudio } = usePlayerStore();
   
   const [showAIModal, setShowAIModal] = useState(false);
   const [selectedSetlist, setSelectedSetlist] = useState<string | null>(null);
   const [availableTime, setAvailableTime] = useState('60');
-  const [sessionCount, setSessionCount] = useState('3');
+  const [performanceDate, setPerformanceDate] = useState<Date | undefined>(undefined);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [practiceGoals, setPracticeGoals] = useState('');
   const [focusAreas, setFocusAreas] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -75,12 +79,34 @@ export default function RehearsalScreen() {
       return;
     }
 
+    if (!performanceDate) {
+      Alert.alert('Error', 'Please select a performance date');
+      return;
+    }
+
     const setlist = Object.values(setlists).find(s => s.id === selectedSetlist);
     if (!setlist) return;
 
     setIsGenerating(true);
 
     try {
+      // Calculate number of days between today and performance date
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      const perfDate = new Date(performanceDate);
+      perfDate.setHours(0, 0, 0, 0);
+
+      const timeDiff = perfDate.getTime() - now.getTime();
+      const daysBetween = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+
+      if (daysBetween <= 0) {
+        Alert.alert('Invalid Date', 'Performance date must be in the future.');
+        setIsGenerating(false);
+        return;
+      }
+
+      const sessionCount = daysBetween; // One session per day
+
       const setlistSongs = setlist.songs
         .map((id: any) => Object.values(songs).find(s => s.id === id))
         .filter(Boolean);
@@ -93,7 +119,7 @@ ${setlistSongs.map((s: any) => `- ${s?.title} (${s?.duration ? formatDuration(s.
 
 Parameters:
 - Total available time per session: ${availableTime} minutes
-- Number of sessions: ${sessionCount}
+- Number of sessions: ${sessionCount} (one per day leading up to the performance)
 - Practice goals: ${practiceGoals || 'General improvement and performance readiness'}
 - Focus areas: ${focusAreas || 'All aspects of performance'}
 
@@ -182,17 +208,17 @@ Make the schedule progressive, building from fundamentals to full performance. C
       }
 
       // Create the rehearsal plan
-      const now = new Date();
       const planId = generateId();
+
       const generatedSessions: RehearsalSession[] = parsedResponse.sessions.map((session: any, index: number) => {
         // Map song titles to IDs
         const songIds = session.songs
           .map((title: string) => setlistSongs.find((s: any) => s?.title === title)?.id)
           .filter(Boolean) as string[];
 
-        // Calculate session date (spread sessions over days)
+        // Calculate session date - one session per day starting tomorrow
         const sessionDate = new Date(now);
-        sessionDate.setDate(sessionDate.getDate() + (index * 2)); // Every 2 days
+        sessionDate.setDate(sessionDate.getDate() + index + 1); // Start tomorrow, then next day, etc.
         sessionDate.setHours(18, 0, 0, 0); // Default to 6 PM
 
         return {
@@ -241,7 +267,7 @@ Make the schedule progressive, building from fundamentals to full performance. C
   const resetForm = () => {
     setSelectedSetlist(null);
     setAvailableTime('60');
-    setSessionCount('3');
+    setPerformanceDate(undefined);
     setPracticeGoals('');
     setFocusAreas('');
   };
@@ -256,7 +282,7 @@ Make the schedule progressive, building from fundamentals to full performance. C
     setExpandedSessions(newExpanded);
   };
 
-  const handleStartSession = (sessionId: string) => {
+  const handleStartSession = async (sessionId: string) => {
     const session = sessions.find(s => s.id === sessionId);
     if (!session) return;
 
@@ -266,23 +292,50 @@ Make the schedule progressive, building from fundamentals to full performance. C
       return;
     }
 
-    // Start the session
+    // Start the session (this creates the temporary setlist for multi-song sessions)
     startSession(sessionId);
 
-    // Navigate to the first song in practice mode
-    const firstSongId = session.songIds[0];
-    router.push(`/practice/${firstSongId}?isSong=true`);
+    // Get the updated session to access the temporary setlist ID
+    const updatedSession = sessions.find(s => s.id === sessionId);
+
+    // Determine which setlist to use (temporary setlist for multi-song sessions, or original setlist)
+    const setlistId = updatedSession?.temporarySetlistId || session.setlistId;
+
+    if (setlistId) {
+      // Unload any current audio to prevent duplication
+      await unloadAudio();
+
+      // Set the current setlist and navigate to practice mode
+      setCurrentSetlist(setlistId, 0, false);
+      router.push(`/practice/${setlistId}`);
+    } else {
+      // Fallback to single song if no setlist is available
+      const firstSongId = session.songIds[0];
+      router.push(`/practice/${firstSongId}?isSong=true`);
+    }
   };
 
-  const handleResumeSession = (sessionId: string) => {
+  const handleResumeSession = async (sessionId: string) => {
     const session = sessions.find(s => s.id === sessionId);
     if (!session || !session.isActive) return;
 
-    // Navigate to the current song in the session
+    // Determine which setlist to use (temporary setlist for multi-song sessions, or original setlist)
+    const setlistId = session.temporarySetlistId || session.setlistId;
     const currentSongIndex = session.currentSongIndex || 0;
-    const currentSongId = session.songIds[currentSongIndex];
-    if (currentSongId) {
-      router.push(`/practice/${currentSongId}?isSong=true`);
+
+    if (setlistId) {
+      // Unload any current audio to prevent duplication
+      await unloadAudio();
+
+      // Set the current setlist at the correct song index and navigate to practice mode
+      setCurrentSetlist(setlistId, currentSongIndex, false);
+      router.push(`/practice/${setlistId}`);
+    } else {
+      // Fallback to single song if no setlist is available
+      const currentSongId = session.songIds[currentSongIndex];
+      if (currentSongId) {
+        router.push(`/practice/${currentSongId}?isSong=true`);
+      }
     }
   };
 
@@ -587,15 +640,40 @@ Make the schedule progressive, building from fundamentals to full performance. C
               </View>
 
               <View style={styles.formGroup}>
-                <Text style={[styles.label, { color: colors.text }]}>Number of Sessions</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.background, color: colors.text }]}
-                  value={sessionCount}
-                  onChangeText={setSessionCount}
-                  keyboardType="numeric"
-                  placeholder="3"
-                  placeholderTextColor={colors.textSecondary}
-                />
+                <Text style={[styles.label, { color: colors.text }]}>Performance Date</Text>
+                <Text style={[styles.labelSubtext, { color: colors.textSecondary }]}>
+                  A session will be created for each day leading up to your performance
+                </Text>
+                <TouchableOpacity
+                  style={[styles.input, { backgroundColor: colors.background, justifyContent: 'center' }]}
+                  onPress={() => setShowDatePicker(true)}
+                >
+                  <Text style={{ color: performanceDate ? colors.text : colors.textSecondary }}>
+                    {performanceDate ? performanceDate.toLocaleDateString() : 'Select date'}
+                  </Text>
+                </TouchableOpacity>
+
+                {showDatePicker && (
+                  <DateTimePicker
+                    value={performanceDate || new Date()}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(event, selectedDate) => {
+                      if (Platform.OS === 'android') {
+                        setShowDatePicker(false);
+                      }
+                      if (event.type === 'set' && selectedDate) {
+                        setPerformanceDate(selectedDate);
+                        if (Platform.OS === 'ios') {
+                          setShowDatePicker(false);
+                        }
+                      } else if (event.type === 'dismissed') {
+                        setShowDatePicker(false);
+                      }
+                    }}
+                    minimumDate={new Date()}
+                  />
+                )}
               </View>
 
               <View style={styles.formGroup}>
@@ -627,13 +705,13 @@ Make the schedule progressive, building from fundamentals to full performance. C
               <TouchableOpacity
                 style={[
                   styles.generateButton,
-                  { 
+                  {
                     backgroundColor: colors.primary,
-                    opacity: isGenerating || !selectedSetlist ? 0.5 : 1,
+                    opacity: isGenerating || !selectedSetlist || !performanceDate ? 0.5 : 1,
                   }
                 ]}
                 onPress={generateAISchedule}
-                disabled={isGenerating || !selectedSetlist}
+                disabled={isGenerating || !selectedSetlist || !performanceDate}
               >
                 {isGenerating ? (
                   <ActivityIndicator color="#FFFFFF" />
@@ -804,6 +882,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     marginBottom: 8,
+  },
+  labelSubtext: {
+    fontSize: 12,
+    marginBottom: 8,
+    lineHeight: 16,
   },
   input: {
     padding: 12,
